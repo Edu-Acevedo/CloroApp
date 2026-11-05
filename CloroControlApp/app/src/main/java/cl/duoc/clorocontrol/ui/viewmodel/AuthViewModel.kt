@@ -3,6 +3,7 @@ package cl.duoc.clorocontrol.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import cl.duoc.clorocontrol.data.preferences.SessionStore
+import cl.duoc.clorocontrol.domain.FormValidators
 import cl.duoc.clorocontrol.model.UserRole
 import cl.duoc.clorocontrol.model.UserSession
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -11,8 +12,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-private val EMAIL_PATTERN = Regex("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")
-
 data class AuthUiState(
     val email: String = "",
     val password: String = "",
@@ -20,7 +19,8 @@ data class AuthUiState(
     val passwordError: String? = null,
     val formMessage: String? = null,
     val session: UserSession? = null,
-    val hasLoadedSession: Boolean = false
+    val hasLoadedSession: Boolean = false,
+    val isLoading: Boolean = false
 )
 
 class AuthViewModel(private val sessionStore: SessionStore) : ViewModel() {
@@ -46,15 +46,10 @@ class AuthViewModel(private val sessionStore: SessionStore) : ViewModel() {
     fun signIn() {
         val current = _uiState.value
         val email = current.email.trim().lowercase()
-        val password = current.password
-        val emailError = when {
-            email.isBlank() -> "Ingresa tu correo electrónico."
-            !EMAIL_PATTERN.matches(email) -> "Ingresa un correo válido."
-            else -> null
-        }
+        val emailError = FormValidators.validateEmail(email)
         val passwordError = when {
-            password.isBlank() -> "Ingresa tu contraseña."
-            password.length < 6 -> "Debe contener al menos 6 caracteres."
+            current.password.isBlank() -> "Ingresa tu contraseña."
+            current.password.length < 6 -> "Debe contener al menos 6 caracteres."
             else -> null
         }
         if (emailError != null || passwordError != null) {
@@ -63,19 +58,25 @@ class AuthViewModel(private val sessionStore: SessionStore) : ViewModel() {
         }
 
         val role = UserRole.fromDemoEmail(email)
-        if (role == null || password != "Demo123") {
+        if (role == null || current.password != "Demo123") {
             _uiState.update {
                 it.copy(
-                    emailError = if (role == null) "Usa una cuenta de demostración." else null,
-                    passwordError = if (password != "Demo123") "Contraseña de demostración incorrecta." else null,
+                    emailError = if (role == null) "Usa una cuenta de demostración."
+                    else null,
+                    passwordError = if (current.password != "Demo123") "Contraseña de demostración incorrecta." else null,
                     formMessage = "Estas credenciales son ficticias y solo sirven para probar el MVP."
                 )
             }
             return
         }
 
+        _uiState.update { it.copy(isLoading = true, formMessage = null) }
         viewModelScope.launch {
-            sessionStore.saveSession(UserSession(email = email, role = role))
+            runCatching { sessionStore.saveSession(UserSession(email = email, role = role)) }
+                .onFailure { error ->
+                    _uiState.update { it.copy(isLoading = false, formMessage = error.message ?: "No se pudo iniciar sesión.") }
+                }
+                .onSuccess { _uiState.update { it.copy(isLoading = false) } }
         }
     }
 

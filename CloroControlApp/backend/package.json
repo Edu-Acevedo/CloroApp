@@ -1,0 +1,13 @@
+{
+  "name": "clorocontrol-local-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "API REST local de demostración para CloroControl",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

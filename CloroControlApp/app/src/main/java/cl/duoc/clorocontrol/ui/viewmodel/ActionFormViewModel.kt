@@ -3,7 +3,7 @@ package cl.duoc.clorocontrol.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import cl.duoc.clorocontrol.data.repository.ChlorineRepository
-import cl.duoc.clorocontrol.domain.ChlorineRules
+import cl.duoc.clorocontrol.domain.FormValidators
 import cl.duoc.clorocontrol.model.UserSession
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -19,7 +19,8 @@ data class ActionFormUiState(
     val descriptionError: String? = null,
     val verifiedError: String? = null,
     val formMessage: String? = null,
-    val saved: Boolean = false
+    val saved: Boolean = false,
+    val isSaving: Boolean = false
 )
 
 class ActionFormViewModel(
@@ -30,52 +31,56 @@ class ActionFormViewModel(
     private val _uiState = MutableStateFlow(ActionFormUiState())
     val uiState: StateFlow<ActionFormUiState> = _uiState.asStateFlow()
 
-    fun onDescriptionChange(value: String) = _uiState.update { it.copy(description = value, descriptionError = null) }
-    fun onVerifiedChange(value: String) = _uiState.update { it.copy(verifiedValue = value, verifiedError = null, formMessage = null) }
-    fun onEvidenceChange(source: String, uri: String? = null) =
-        _uiState.update { it.copy(evidenceSource = source, evidenceUri = uri) }
+    fun onDescriptionChange(value: String) = _uiState.update {
+        it.copy(description = value, descriptionError = null, saved = false)
+    }
+
+    fun onVerifiedChange(value: String) = _uiState.update {
+        it.copy(verifiedValue = value, verifiedError = null, formMessage = null, saved = false)
+    }
+
+    fun onEvidenceChange(source: String, uri: String? = null) = _uiState.update {
+        it.copy(evidenceSource = source, evidenceUri = uri)
+    }
 
     fun save() {
-        if (session.role == cl.duoc.clorocontrol.model.UserRole.JEFATURA) {
+        if (!session.canRegisterActions) {
             _uiState.update { it.copy(formMessage = "El perfil Jefatura tiene permisos de consulta, no de registro.", saved = false) }
             return
         }
         val state = _uiState.value
-        val verified = state.verifiedValue.trim().replace(',', '.').toDoubleOrNull()
-        val descriptionError = when {
-            state.description.isBlank() -> "Describe la acción realizada."
-            state.description.trim().length < 8 -> "Escribe al menos 8 caracteres para describir la acción."
-            else -> null
-        }
-        val verifiedError = when {
-            state.verifiedValue.isBlank() -> "Ingresa la medición de verificación."
-            verified == null -> "Usa un número, por ejemplo 3,50."
-            !verified.isFinite() || verified < 0.0 || verified > 10.0 -> "El valor debe estar entre 0,00 y 10,00 ppm."
-            else -> null
-        }
+        val descriptionError = FormValidators.validateDescription(state.description)
+        val verifiedError = FormValidators.validatePpm(state.verifiedValue)
         if (descriptionError != null || verifiedError != null) {
             _uiState.update {
                 it.copy(descriptionError = descriptionError, verifiedError = verifiedError, formMessage = null, saved = false)
             }
             return
         }
-        val ppm = requireNotNull(verified)
+
+        val ppm = requireNotNull(FormValidators.parsePpm(state.verifiedValue))
+        _uiState.update { it.copy(isSaving = true, formMessage = null, saved = false) }
         viewModelScope.launch {
-            val saved = repository.registerCorrectiveAction(
-                alertId = alertId,
-                description = state.description,
-                responsible = session.email,
-                verifiedPpm = ppm,
-                evidenceSource = state.evidenceSource,
-                evidenceUri = state.evidenceUri,
-                role = session.role
-            )
-            val message = when {
-                !saved -> "No se encontró la alerta asociada."
-                session.role.name == "SUPERVISOR" && ChlorineRules.canCloseAlert(ppm) -> "Acción guardada y alerta cerrada por supervisión."
-                else -> "Acción guardada. Queda pendiente de validación del supervisor."
+            runCatching {
+                repository.registerCorrectiveAction(
+                    alertId = alertId,
+                    description = state.description,
+                    responsible = session.email,
+                    verifiedPpm = ppm,
+                    evidenceSource = state.evidenceSource,
+                    evidenceUri = state.evidenceUri,
+                    role = session.role
+                )
+            }.onSuccess { saved ->
+                val message = if (saved) {
+                    "Acción guardada localmente. Queda pendiente de validación del supervisor y sincronización."
+                } else {
+                    "No se encontró la alerta asociada."
+                }
+                _uiState.update { it.copy(isSaving = false, saved = saved, formMessage = message) }
+            }.onFailure { error ->
+                _uiState.update { it.copy(isSaving = false, saved = false, formMessage = error.message ?: "No se pudo guardar la acción.") }
             }
-            _uiState.update { it.copy(saved = saved, formMessage = message) }
         }
     }
 }

@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MailOutline
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -94,8 +95,13 @@ fun LoginScreen(viewModel: AuthViewModel) {
                 state.formMessage?.let {
                     Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
-                Button(onClick = viewModel::signIn, modifier = Modifier.fillMaxWidth().height(52.dp)) {
-                    Text("Iniciar sesión")
+                Button(
+                    onClick = viewModel::signIn,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    enabled = !state.isLoading
+                ) {
+                    if (state.isLoading) CircularProgressIndicator()
+                    else Text("Iniciar sesión")
                 }
                 Spacer(Modifier.height(6.dp))
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
@@ -104,7 +110,7 @@ fun LoginScreen(viewModel: AuthViewModel) {
                         Text("operario@demo.cl · Demo123", style = MaterialTheme.typography.bodySmall)
                         Text("supervisor@demo.cl · Demo123", style = MaterialTheme.typography.bodySmall)
                         Text("jefatura@demo.cl · Demo123", style = MaterialTheme.typography.bodySmall)
-                        Text("Usuarios ficticios para el MVP académico.", style = MaterialTheme.typography.labelSmall)
+                        Text("15 usuarios ficticios disponibles · 5 por rol. Ver README para todas las cuentas.", style = MaterialTheme.typography.labelSmall)
                     }
                 }
             }

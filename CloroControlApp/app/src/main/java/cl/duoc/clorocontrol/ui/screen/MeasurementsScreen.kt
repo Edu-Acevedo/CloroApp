@@ -31,26 +31,37 @@ fun MeasurementsScreen(
     app: CloroControlApplication,
     onRegisterMeasurement: () -> Unit
 ) {
-    val vm: MonitoringViewModel = viewModel(factory = viewModelFactory { MonitoringViewModel(app.repository) })
-    val measurements by vm.measurements.collectAsStateWithLifecycle()
+    val vm: MonitoringViewModel = viewModel(
+        factory = viewModelFactory { MonitoringViewModel(app.repository, app.connectivityObserver, app) }
+    )
+    val allMeasurements by vm.measurements.collectAsStateWithLifecycle()
+    val measurements = allMeasurements.filter { session.canAccessFarm(it.farm) }
 
-    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
         Column(modifier = Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("Mediciones", style = MaterialTheme.typography.headlineMedium)
-            Text("Registros guardados localmente en el dispositivo.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                "Registros guardados localmente en el dispositivo. Los pendientes se sincronizan cuando hay conexión.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
         if (session.role != UserRole.JEFATURA) {
             Button(onClick = onRegisterMeasurement, modifier = Modifier.fillMaxWidth()) {
                 androidx.compose.material3.Icon(Icons.Default.Add, contentDescription = null)
-                Spacer(Modifier.padding(horizontal = 3.dp))
-                Text("Nueva medición")
+                Text("  Nueva medición")
             }
         }
         if (measurements.isEmpty()) {
-            Text("No hay mediciones para mostrar.", modifier = Modifier.padding(12.dp))
+            Text("No hay mediciones para mostrar en tus granjas asignadas.", modifier = Modifier.padding(12.dp))
         } else {
-            LazyColumn(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(measurements, key = { it.id }) { item -> MeasurementCard(item, Modifier.fillMaxWidth()) }
+            LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                items(measurements, key = { it.id }) { item ->
+                    MeasurementCard(item, Modifier.fillMaxWidth())
+                }
                 item { Spacer(Modifier.padding(bottom = 8.dp)) }
             }
         }

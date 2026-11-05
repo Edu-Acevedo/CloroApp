@@ -6,8 +6,8 @@ enum class ChlorineStatus(val label: String) {
     CRITICO("Crítico")
 }
 
+/** Rangos académicos propuestos para el MVP. Deben confirmarse con el docente. */
 object ChlorineRules {
-    /** Rangos académicos propuestos para el MVP; deben ser confirmados con el docente. */
     fun status(value: Double): ChlorineStatus = when {
         value < 2.0 || value > 6.0 -> ChlorineStatus.CRITICO
         value < 3.0 || value > 5.0 -> ChlorineStatus.ADVERTENCIA
@@ -23,5 +23,6 @@ object ChlorineRules {
         ChlorineStatus.CRITICO -> "CRÍTICA"
     }
 
-    fun canCloseAlert(verifiedPpm: Double): Boolean = status(verifiedPpm) == ChlorineStatus.NORMAL
+    fun canCloseAlert(verifiedPpm: Double): Boolean =
+        status(verifiedPpm) == ChlorineStatus.NORMAL
 }

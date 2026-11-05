@@ -25,15 +25,18 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import cl.duoc.clorocontrol.CloroControlApplication
 import cl.duoc.clorocontrol.data.local.CorrectiveActionEntity
-import cl.duoc.clorocontrol.data.local.MeasurementEntity
+import cl.duoc.clorocontrol.model.UserSession
 import cl.duoc.clorocontrol.ui.viewmodel.MonitoringViewModel
 import cl.duoc.clorocontrol.ui.viewmodel.viewModelFactory
 
 @Composable
-fun HistoryScreen(app: CloroControlApplication) {
-    val vm: MonitoringViewModel = viewModel(factory = viewModelFactory { MonitoringViewModel(app.repository) })
-    val measurements by vm.measurements.collectAsStateWithLifecycle()
-    val actions by vm.actions.collectAsStateWithLifecycle()
+fun HistoryScreen(session: UserSession, app: CloroControlApplication) {
+    val vm: MonitoringViewModel = viewModel(
+        factory = viewModelFactory { MonitoringViewModel(app.repository, app.connectivityObserver, app) }
+    )
+    val allMeasurements by vm.measurements.collectAsStateWithLifecycle()
+    val allActions by vm.actions.collectAsStateWithLifecycle()
+    val allAlerts by vm.alerts.collectAsStateWithLifecycle()
     var period by remember { mutableStateOf("7 días") }
     val duration = when (period) {
         "24 horas" -> 24 * 60 * 60 * 1000L
@@ -41,13 +44,22 @@ fun HistoryScreen(app: CloroControlApplication) {
         else -> 7 * 24 * 60 * 60 * 1000L
     }
     val cutoff = System.currentTimeMillis() - duration
-    val visibleMeasurements = measurements.filter { it.measuredAt >= cutoff }
-    val visibleActions = actions.filter { it.createdAt >= cutoff }
+    val measurements = allMeasurements.filter { session.canAccessFarm(it.farm) && it.measuredAt >= cutoff }
+    val visibleAlertIds = allAlerts
+        .filter { session.canAccessFarm(it.farm) }
+        .map { it.id }
+        .toSet()
+    val visibleActions = allActions.filter { action ->
+        action.createdAt >= cutoff && action.alertId in visibleAlertIds
+    }
 
-    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
         Column(modifier = Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("Historial", style = MaterialTheme.typography.headlineMedium)
-            Text("Consulta mediciones y acciones correctivas locales.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Consulta las mediciones y acciones correctivas guardadas en el dispositivo.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf("24 horas", "7 días", "30 días").forEach { option ->
@@ -55,13 +67,11 @@ fun HistoryScreen(app: CloroControlApplication) {
             }
         }
         LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            item {
-                Text("Mediciones (${visibleMeasurements.size})", style = MaterialTheme.typography.titleLarge)
-            }
-            if (visibleMeasurements.isEmpty()) {
+            item { Text("Mediciones (${measurements.size})", style = MaterialTheme.typography.titleLarge) }
+            if (measurements.isEmpty()) {
                 item { Text("No hay mediciones para este período.", modifier = Modifier.padding(8.dp)) }
             } else {
-                items(visibleMeasurements, key = { "m-${it.id}" }) { MeasurementCard(it, Modifier.fillMaxWidth()) }
+                items(measurements, key = { "m-${it.id}" }) { MeasurementCard(it, Modifier.fillMaxWidth()) }
             }
             item {
                 Text("Acciones correctivas (${visibleActions.size})", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 8.dp))
@@ -87,7 +97,9 @@ private fun CorrectiveActionCard(action: CorrectiveActionEntity) {
             if (action.evidenceSource != "Sin evidencia") {
                 Text("Evidencia: ${action.evidenceSource}", style = MaterialTheme.typography.labelMedium)
             }
+            Text(if (action.synced) "Sincronizada" else "Pendiente de sincronización", style = MaterialTheme.typography.labelSmall)
             action.validatedBy?.let { Text("Validada por: $it", style = MaterialTheme.typography.bodySmall) }
         }
     }
 }
+

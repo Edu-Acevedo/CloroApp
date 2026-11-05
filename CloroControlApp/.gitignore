@@ -10,3 +10,6 @@ local.properties
 .cxx/
 *.apk
 *.aab
+.kotlin/
+backend/data/*.json
+backend/data/*.tmp

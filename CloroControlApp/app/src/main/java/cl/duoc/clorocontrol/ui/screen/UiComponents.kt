@@ -3,7 +3,10 @@ package cl.duoc.clorocontrol.ui.screen
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -19,6 +22,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -34,6 +39,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+
 @Composable
 fun StatusPill(status: String, modifier: Modifier = Modifier) {
     val target = when (status.uppercase()) {
@@ -42,7 +48,7 @@ fun StatusPill(status: String, modifier: Modifier = Modifier) {
         "CRITICO", "CRÍTICO", "CRÍTICA" -> CriticalBackground
         else -> MaterialTheme.colorScheme.surfaceVariant
     }
-    val animated by animateColorAsState(targetValue = target, animationSpec = tween(350), label = "statusColor")
+    val animated by animateColorAsState(targetValue = target, animationSpec = tween(1200), label = "statusColor")
     val textColor = when (status.uppercase()) {
         "NORMAL" -> NormalGreen
         "ADVERTENCIA" -> WarningAmber
@@ -108,6 +114,11 @@ fun MeasurementCard(item: MeasurementEntity, modifier: Modifier = Modifier) {
                 Text("${formatPpm(item.chlorinePpm)} ppm", style = MaterialTheme.typography.titleLarge)
                 Text(formatTimestamp(item.measuredAt), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            Text(
+                if (item.synced) "Sincronizada con el servidor" else "Guardada en el dispositivo · pendiente de sincronización",
+                style = MaterialTheme.typography.labelSmall,
+                color = if (item.synced) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary
+            )
         }
     }
 }
@@ -147,3 +158,86 @@ fun AlertCard(
 
 fun formatPpm(value: Double): String = String.format(Locale("es", "CL"), "%.2f", value)
 fun formatTimestamp(value: Long): String = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale("es", "CL")).format(Date(value))
+
+
+/** Gráfico local de tendencia; no requiere servicio externo ni conexión de red. */
+@Composable
+fun ChlorineTrendCard(values: List<Double>, modifier: Modifier = Modifier) {
+    val chartColor = MaterialTheme.colorScheme.primary
+    Card(
+        modifier = modifier,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        androidx.compose.foundation.layout.Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text("Tendencia de cloro libre", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Últimas ${values.size} mediciones · banda normal de 3,00 a 5,00 ppm",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (values.size < 2) {
+                Text("Se necesitan al menos dos mediciones para mostrar la tendencia.")
+            } else {
+                Canvas(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(150.dp)
+                ) {
+                    val chartMin = 0.0
+                    val chartMax = 10.0
+                    val chartRange = chartMax - chartMin
+                    val yFor = { value: Double ->
+                        size.height - ((value - chartMin) / chartRange).toFloat() * size.height
+                    }
+                    val normalTop = yFor(5.0)
+                    val normalBottom = yFor(3.0)
+                    drawRect(
+                        color = NormalBackground.copy(alpha = 0.75f),
+                        topLeft = Offset(0f, normalTop),
+                        size = Size(size.width, normalBottom - normalTop)
+                    )
+                    for (lineValue in listOf(0.0, 2.0, 3.0, 5.0, 6.0, 10.0)) {
+                        val y = yFor(lineValue)
+                        drawLine(
+                            color = Color.LightGray.copy(alpha = 0.75f),
+                            start = Offset(0f, y),
+                            end = Offset(size.width, y),
+                            strokeWidth = 1.dp.toPx()
+                        )
+                    }
+                    val points = values.mapIndexed { index, value ->
+                        val x = if (values.size == 1) 0f else index.toFloat() / (values.size - 1) * size.width
+                        Offset(x, yFor(value.coerceIn(chartMin, chartMax)))
+                    }
+                    points.zipWithNext().forEach { (start, end) ->
+                        drawLine(
+                            color = chartColor,
+                            start = start,
+                            end = end,
+                            strokeWidth = 3.dp.toPx(),
+                            cap = androidx.compose.ui.graphics.StrokeCap.Round
+                        )
+                    }
+                    points.forEach { point ->
+                        drawCircle(
+                            color = chartColor,
+                            radius = 4.dp.toPx(),
+                            center = point
+                        )
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("0 ppm", style = MaterialTheme.typography.labelSmall)
+                    Text("10 ppm", style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
+    }
+}

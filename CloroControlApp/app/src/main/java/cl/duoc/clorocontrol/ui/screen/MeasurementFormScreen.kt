@@ -13,9 +13,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -33,7 +32,14 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import cl.duoc.clorocontrol.CloroControlApplication
 import cl.duoc.clorocontrol.model.UserSession
 import cl.duoc.clorocontrol.ui.viewmodel.MeasurementFormViewModel
+import cl.duoc.clorocontrol.ui.viewmodel.pointsForFarm
 import cl.duoc.clorocontrol.ui.viewmodel.viewModelFactory
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
+
 
 @Composable
 fun MeasurementFormScreen(
@@ -47,48 +53,81 @@ fun MeasurementFormScreen(
     )
     val state by vm.uiState.collectAsStateWithLifecycle()
     LaunchedEffect(state.saved) { if (state.saved) onSaved() }
-    val points = when (state.farm) {
-        "Granja Norte" -> listOf("N-01", "N-02", "N-03", "N-04")
-        "Granja Central" -> listOf("C-01", "C-02", "C-03", "C-04")
-        else -> listOf("S-01", "S-02", "S-03", "S-04")
-    }
+    val points = pointsForFarm(state.farm)
 
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).imePadding().padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text("Registrar medición", style = MaterialTheme.typography.headlineMedium)
-        Text("Ingresa el resultado de cloro libre en ppm. Los datos quedan guardados en SQLite.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        DropdownField("Granja", state.farm, listOf("Granja Norte", "Granja Central", "Granja Sur"), vm::onFarmChange, state.farmError)
+        Text(
+            "Ingresa el resultado de cloro libre. El registro se guarda primero en SQLite, por lo que puedes trabajar sin Internet.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        DropdownField("Granja", state.farm, vm.availableFarms, vm::onFarmChange, state.farmError)
+        Text(
+            text = "Granjas disponibles: ${vm.availableFarms.joinToString(separator = " | ")}",
+            style = MaterialTheme.typography.bodySmall
+        )
         OutlinedTextField(
-            value = state.shed, onValueChange = vm::onShedChange, modifier = Modifier.fillMaxWidth(),
-            label = { Text("Galpón") }, singleLine = true, isError = state.shedError != null,
-            supportingText = { state.shedError?.let { Text(it) } },
-            trailingIcon = { if (state.shedError != null) androidx.compose.material3.Icon(Icons.Default.ErrorOutline, contentDescription = "Error") }
+            value = state.shed,
+            onValueChange = vm::onShedChange,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Galpón") },
+            singleLine = true,
+            isError = state.shedError != null,
+            supportingText = { Text(state.shedError ?: "Ej. Galpón 1") },
+            trailingIcon = { if (state.shedError != null) androidx.compose.material3.Icon(Icons.Default.ErrorOutline, contentDescription = "Error en galpón") }
         )
         DropdownField("Punto de medición", state.pointCode, points, vm::onPointChange, state.pointError)
         OutlinedTextField(
-            value = state.location, onValueChange = vm::onLocationChange, modifier = Modifier.fillMaxWidth(),
-            label = { Text("Ubicación del punto") }, placeholder = { Text("Ej. Extremo de línea") }, singleLine = true,
-            isError = state.locationError != null, supportingText = { state.locationError?.let { Text(it) } },
-            trailingIcon = { if (state.locationError != null) androidx.compose.material3.Icon(Icons.Default.ErrorOutline, contentDescription = "Error") }
+            value = state.location,
+            onValueChange = vm::onLocationChange,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Ubicación del punto") },
+            placeholder = { Text("Ej. Extremo de línea") },
+            singleLine = true,
+            isError = state.locationError != null,
+            supportingText = { Text(state.locationError ?: "Describe el lugar exacto donde se tomó la muestra.") },
+            trailingIcon = { if (state.locationError != null) androidx.compose.material3.Icon(Icons.Default.ErrorOutline, contentDescription = "Error en ubicación") }
         )
         OutlinedTextField(
-            value = state.chlorineValue, onValueChange = vm::onChlorineChange, modifier = Modifier.fillMaxWidth(),
-            label = { Text("Cloro libre (ppm)") }, placeholder = { Text("3,50") }, singleLine = true,
-            isError = state.chlorineError != null, supportingText = {
-                Text(state.chlorineError ?: "Acepta valores desde 0,00 hasta 10,00 ppm; se mostrarán dos decimales.")
-            }, trailingIcon = {
+            value = state.chlorineValue,
+            onValueChange = vm::onChlorineChange,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Cloro libre (ppm)") },
+            placeholder = { Text("3,50") },
+            singleLine = true,
+            isError = state.chlorineError != null,
+            supportingText = {
+                Text(state.chlorineError ?: "Acepta valores desde 0,00 ppm; las lecturas sobre 6,00 ppm se registran como desviación crítica. Máximo dos decimales.")
+            },
+            trailingIcon = {
                 if (state.chlorineError != null) androidx.compose.material3.Icon(Icons.Default.ErrorOutline, contentDescription = "Error de cloro")
             }
         )
-        state.formMessage?.let { Text(it, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyMedium) }
-        Button(onClick = vm::save, modifier = Modifier.fillMaxWidth()) { Text("Guardar medición") }
+        state.formMessage?.let {
+            Text(
+                it,
+                color = if (state.saved) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
+        Button(
+            onClick = vm::save,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !state.isSaving
+        ) {
+            if (state.isSaving) CircularProgressIndicator()
+            else Text("Guardar medición")
+        }
         Text("Responsable: ${session.email}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.padding(bottom = 16.dp))
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DropdownField(
     label: String,
@@ -98,22 +137,42 @@ private fun DropdownField(
     error: String?
 ) {
     var expanded by remember { mutableStateOf(false) }
-    Box(modifier = Modifier.fillMaxWidth()) {
+
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = it }
+    ) {
         OutlinedTextField(
             value = value,
             onValueChange = {},
-            modifier = Modifier.fillMaxWidth().clickable { expanded = true },
+            modifier = Modifier
+                .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                .fillMaxWidth(),
             readOnly = true,
             label = { Text(label) },
             singleLine = true,
             isError = error != null,
-            supportingText = { error?.let { Text(it) } },
+            supportingText = {
+                error?.let { Text(it) }
+            },
             trailingIcon = {
-                if (error != null) androidx.compose.material3.Icon(Icons.Default.ErrorOutline, contentDescription = "Error")
-                else androidx.compose.material3.Icon(Icons.Default.ExpandMore, contentDescription = "Mostrar opciones")
+                if (error != null) {
+                    androidx.compose.material3.Icon(
+                        Icons.Default.ErrorOutline,
+                        contentDescription = "Error"
+                    )
+                } else {
+                    ExposedDropdownMenuDefaults.TrailingIcon(
+                        expanded = expanded
+                    )
+                }
             }
         )
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
             options.forEach { option ->
                 DropdownMenuItem(
                     text = { Text(option) },
@@ -125,4 +184,5 @@ private fun DropdownField(
             }
         }
     }
+
 }
